@@ -6,6 +6,7 @@ either driver. Selenium has no auto-waiting, so every interaction waits explicit
 
 from __future__ import annotations
 
+from selenium.common.exceptions import StaleElementReferenceException, WebDriverException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.remote.webelement import WebElement
@@ -36,12 +37,30 @@ class SeleniumPage:
         """Wait for this form's response, not elements in the pre-submit document."""
         button = self.wait.until(ec.element_to_be_clickable(_testid(testid)))
         button.click()
-        self.wait.until(ec.staleness_of(button))
+        self.wait.until(_detached(button))
         # A status element can appear before the rest of the HTML has been parsed.
         # Wait for the response document to finish loading before reading its rows.
         self.wait.until(
             lambda driver: driver.execute_script("return document.readyState") == "complete"
         )
+
+
+def _detached(element: WebElement):
+    """Like ec.staleness_of, but also accepts Chrome's inspector error for a node whose
+    document has been replaced, which chromedriver can report instead of a stale reference."""
+
+    def check(_driver: WebDriver) -> bool:
+        try:
+            element.is_enabled()
+        except StaleElementReferenceException:
+            return True
+        except WebDriverException as exc:
+            if "does not belong to the document" in (exc.msg or ""):
+                return True
+            raise
+        return False
+
+    return check
 
 
 class SeleniumLoginPage(SeleniumPage):
