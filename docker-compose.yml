@@ -1,0 +1,26 @@
+# Runs the system under test in a container. The test suite then targets it with
+#   SUT_BASE_URL=http://127.0.0.1:8000 SUT_DB_PATH=compose-data/bookshop.sqlite3 pytest
+# HOST_UID/HOST_GID make the bind-mounted database readable by the host-side DB tests.
+name: assay
+
+services:
+  sut:
+    build: .
+    image: assay-sut:latest
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    ports:
+      - "127.0.0.1:${SUT_PORT:-8000}:8000"
+    environment:
+      BOOKSHOP_DB: /data/bookshop.sqlite3
+      BOOKSHOP_ADMIN_TOKEN: ${BOOKSHOP_ADMIN_TOKEN:-dev-admin-token}
+    volumes:
+      - ./compose-data:/data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2)"
+      interval: 5s
+      timeout: 3s
+      retries: 12

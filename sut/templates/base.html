@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Bookshop{% endblock %} | Bookshop</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+  <header class="site-header">
+    <a class="brand" href="/">Bookshop</a>
+    <nav aria-label="Main">
+      <ul>
+        <li><a href="/books">Browse</a></li>
+        {% if user %}
+        <li><a href="/cart" data-testid="nav-cart">Cart</a></li>
+        <li><span data-testid="nav-user">Signed in as {{ user.username }}</span></li>
+        <li>
+          <form method="post" action="/logout">
+            <button type="submit" class="link-button" data-testid="logout">Sign out</button>
+          </form>
+        </li>
+        {% else %}
+        <li><a href="/login" data-testid="nav-login">Sign in</a></li>
+        {% endif %}
+      </ul>
+    </nav>
+  </header>
+  <main id="main">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="site-footer">
+    <p>Demo application used as a system under test. Not a real shop.</p>
+  </footer>
+</body>
+</html>

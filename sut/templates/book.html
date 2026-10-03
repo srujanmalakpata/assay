@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ book.title }}{% endblock %}
+{% block content %}
+<article class="book">
+  <h1 data-testid="book-title">{{ book.title }}</h1>
+  <dl>
+    <dt>Author</dt><dd>{{ book.author }}</dd>
+    <dt>ISBN</dt><dd>{{ book.isbn }}</dd>
+    <dt>Price</dt><dd data-testid="book-price">{{ book.price_cents | money }}</dd>
+    <dt>In stock</dt><dd data-testid="book-stock">{{ book.stock }}</dd>
+  </dl>
+  {% if error %}<p role="alert" class="error" data-testid="error">{{ error }}</p>{% endif %}
+  {% if book.stock > 0 %}
+  <form method="post" action="/cart/add" class="add-form">
+    <input type="hidden" name="book_id" value="{{ book.id }}">
+    <label for="quantity">Quantity</label>
+    <input id="quantity" name="quantity" type="number" min="1" max="99" value="1"
+           data-testid="quantity">
+    <button type="submit" data-testid="add-to-cart">Add to cart</button>
+  </form>
+  {% else %}
+  <p data-testid="sold-out">This book is out of stock.</p>
+  {% endif %}
+</article>
+{% endblock %}

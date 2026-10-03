@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Order {{ order.id }}{% endblock %}
+{% block content %}
+<h1 data-testid="order-heading">Thank you! Order #{{ order.id }} is confirmed</h1>
+<table class="cart">
+  <caption>Items in order {{ order.id }}</caption>
+  <thead>
+    <tr><th scope="col">Title</th><th scope="col">Quantity</th><th scope="col">Unit price</th></tr>
+  </thead>
+  <tbody>
+    {% for line in order.lines %}
+    <tr data-testid="order-row"><td>{{ line.title }}</td><td>{{ line.quantity }}</td><td>{{ line.unit_price_cents | money }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+<dl class="totals">
+  <dt>Subtotal</dt><dd>{{ order.subtotal_cents | money }}</dd>
+  <dt>Discount</dt><dd>{{ order.discount_cents | money }}</dd>
+  <dt>Total paid</dt><dd data-testid="order-total">{{ order.total_cents | money }}</dd>
+</dl>
+<p><a href="/books">Continue shopping</a></p>
+{% endblock %}

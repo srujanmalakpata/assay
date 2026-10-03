@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Your cart{% endblock %}
+{% block content %}
+<h1>Your cart</h1>
+{% if added_title %}<p role="status" class="notice" data-testid="added-notice">Added "{{ added_title }}" to your cart.</p>{% endif %}
+{% if error %}<p role="alert" class="error" data-testid="error">{{ error }}</p>{% endif %}
+{% if cart.lines %}
+<table class="cart" data-testid="cart-table">
+  <caption>Items in your cart</caption>
+  <thead>
+    <tr><th scope="col">Title</th><th scope="col">Unit price</th><th scope="col">Quantity</th><th scope="col">Line total</th></tr>
+  </thead>
+  <tbody>
+    {% for line in cart.lines %}
+    <tr data-testid="cart-row" data-book-id="{{ line.book.id }}">
+      <td data-testid="cart-title">{{ line.book.title }}</td>
+      <td>{{ line.book.price_cents | money }}</td>
+      <td>
+        <form method="post" action="/cart/update" class="inline-form">
+          <input type="hidden" name="book_id" value="{{ line.book.id }}">
+          <label for="qty-{{ line.book.id }}" class="visually-hidden">Quantity of {{ line.book.title }}</label>
+          <input id="qty-{{ line.book.id }}" name="quantity" type="number" min="0" max="99"
+                 value="{{ line.quantity }}" data-testid="cart-quantity">
+          <button type="submit" data-testid="cart-update">Update</button>
+        </form>
+      </td>
+      <td data-testid="line-total">{{ line.line_total_cents | money }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<dl class="totals">
+  <dt>Subtotal</dt><dd data-testid="subtotal">{{ cart.quote.subtotal_cents | money }}</dd>
+  <dt>Discount</dt><dd data-testid="discount">{{ cart.quote.discount_cents | money }}</dd>
+  <dt>Total</dt><dd data-testid="total">{{ cart.quote.total_cents | money }}</dd>
+</dl>
+<form method="post" action="/checkout">
+  <button type="submit" data-testid="checkout">Place order</button>
+</form>
+{% else %}
+<p data-testid="empty-cart">Your cart is empty. <a href="/books">Browse books</a>.</p>
+{% endif %}
+{% endblock %}

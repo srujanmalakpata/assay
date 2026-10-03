@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "book.json",
+  "title": "Book",
+  "type": "object",
+  "required": ["id", "isbn", "title", "author", "price_cents", "stock"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {"type": "integer", "minimum": 1},
+    "isbn": {"type": "string", "pattern": "^[0-9]{13}$"},
+    "title": {"type": "string", "minLength": 1},
+    "author": {"type": "string", "minLength": 1},
+    "price_cents": {"type": "integer", "minimum": 0},
+    "stock": {"type": "integer", "minimum": 0}
+  }
+}

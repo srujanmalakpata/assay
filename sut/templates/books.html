@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Search{% endblock %}
+{% block content %}
+<h1>Books</h1>
+{% include "_search_form.html" %}
+{% if error %}
+<p role="alert" class="error">{{ error }}</p>
+{% elif result %}
+<p role="status" data-testid="result-count">{{ result.total }} result{{ '' if result.total == 1 else 's' }}{% if q %} for "{{ q }}"{% endif %}</p>
+{% if result.items %}
+<table class="results" data-testid="results">
+  <caption>Search results</caption>
+  <thead>
+    <tr><th scope="col">Title</th><th scope="col">Author</th><th scope="col">Price</th><th scope="col">Availability</th></tr>
+  </thead>
+  <tbody>
+    {% for book in result.items %}
+    <tr data-testid="result-row">
+      <td><a href="/books/{{ book.id }}">{{ book.title }}</a></td>
+      <td>{{ book.author }}</td>
+      <td>{{ book.price_cents | money }}</td>
+      <td>{{ 'In stock' if book.stock > 0 else 'Out of stock' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% set last_page = ((result.total + result.page_size - 1) // result.page_size) %}
+{% if last_page > 1 %}
+<nav aria-label="Pagination" class="pagination">
+  {% if result.page > 1 %}<a href="/books?q={{ q | urlencode }}&page={{ result.page - 1 }}" rel="prev">Previous page</a>{% endif %}
+  <span>Page {{ result.page }} of {{ last_page }}</span>
+  {% if result.page < last_page %}<a href="/books?q={{ q | urlencode }}&page={{ result.page + 1 }}" rel="next" data-testid="next-page">Next page</a>{% endif %}
+</nav>
+{% endif %}
+{% else %}
+<p>No books matched your search.</p>
+{% endif %}
+{% endif %}
+{% endblock %}

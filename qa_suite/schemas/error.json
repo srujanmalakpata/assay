@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "error.json",
+  "title": "Error",
+  "description": "Domain errors carry a string detail; request-validation errors (422) carry a list that never echoes the rejected input (BUG-010).",
+  "type": "object",
+  "required": ["detail"],
+  "properties": {
+    "detail": {
+      "oneOf": [
+        {"type": "string", "minLength": 1},
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["loc", "msg", "type"],
+            "additionalProperties": false,
+            "properties": {
+              "loc": {"type": "array"},
+              "msg": {"type": "string"},
+              "type": {"type": "string"}
+            }
+          }
+        }
+      ]
+    }
+  }
+}

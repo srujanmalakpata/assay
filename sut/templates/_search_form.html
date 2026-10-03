@@ -1,0 +1,6 @@
+<form role="search" method="get" action="/books" class="search-form">
+  <label for="search-q">Search by title or author</label>
+  <input id="search-q" name="q" type="search" value="{{ q or '' }}" maxlength="100"
+         data-testid="search-input">
+  <button type="submit" data-testid="search-submit">Search</button>
+</form>

@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+{% block content %}
+<h1>Welcome to the Bookshop</h1>
+{% include "_search_form.html" %}
+<section aria-labelledby="featured-heading">
+  <h2 id="featured-heading">Featured books</h2>
+  <ul class="book-list">
+    {% for book in featured %}
+    <li><a href="/books/{{ book.id }}">{{ book.title }}</a> by {{ book.author }}</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endblock %}

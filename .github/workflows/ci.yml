@@ -1,0 +1,204 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+  UV_FROZEN: "1"
+
+jobs:
+  lint:
+    name: Lint and lockfile checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - name: requirements.txt (Docker image) matches uv.lock
+        run: |
+          uv export --no-dev --no-hashes --format requirements-txt --no-emit-project -o /tmp/req.txt
+          diff <(grep -v '^#' requirements.txt) <(grep -v '^#' /tmp/req.txt)
+
+  api:
+    name: Unit, API, contract, property and DB tests
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync
+      - name: Run tests in parallel (pytest-xdist)
+        run: >
+          uv run pytest tests/unit tests/api tests/db -n auto
+          --junitxml=reports/junit-api.xml
+          --html=reports/api-report.html --self-contained-html
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: api-reports
+          path: reports/
+
+  ui:
+    name: Playwright UI tests
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync
+      - run: uv run playwright install --with-deps chromium
+      - name: Run UI tests (traces + screenshots kept on failure)
+        run: >
+          uv run pytest tests/ui -n 2
+          --junitxml=reports/junit-ui.xml
+          --html=reports/ui-report.html --self-contained-html
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-reports-and-traces
+          path: |
+            reports/
+            test-results/
+
+  accessibility:
+    name: axe-core accessibility scans
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync
+      - run: uv run playwright install --with-deps chromium
+      - run: >
+          uv run pytest -m a11y
+          --junitxml=reports/junit-a11y.xml
+          --html=reports/a11y-report.html --self-contained-html
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: a11y-reports
+          path: |
+            reports/
+            test-results/
+
+  selenium:
+    name: Selenium WebDriver variant
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync
+      # The runner image ships Google Chrome; Selenium Manager fetches the matching chromedriver.
+      # SELENIUM_REQUIRED=1 makes a missing driver fail the job instead of skipping all tests.
+      - run: uv run pytest -m selenium --junitxml=reports/junit-selenium.xml
+        env:
+          SELENIUM_REQUIRED: "1"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: selenium-reports
+          path: |
+            reports/
+            test-results/
+
+  load-smoke:
+    name: Locust load smoke (30 s, thresholds enforced)
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync
+      - name: Run load test (fails if p95 > 300 ms or error rate > 1 %)
+        run: uv run python load/run_load.py --users 20 --spawn-rate 5 --duration 30s
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: load-results
+          path: reports/
+
+  flaky-check:
+    name: Flaky-test detector on the smoke suite
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync
+      - run: uv run playwright install --with-deps chromium
+      - run: uv run python -m qa_suite.flaky --runs 3 --out reports/flaky -- -m smoke
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: flaky-report
+          path: reports/flaky/
+
+  docker-compose:
+    name: Full suite against the containerised SUT
+    runs-on: ubuntu-latest
+    needs: lint
+    env:
+      SUT_PORT: "8000"
+      SUT_BASE_URL: http://127.0.0.1:8000
+      SUT_DB_PATH: compose-data/bookshop.sqlite3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync
+      - run: uv run playwright install --with-deps chromium
+      - name: Build and start the SUT container
+        run: |
+          mkdir -p compose-data
+          HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose up -d --build --wait
+      - name: Run the suite against the container
+        run: >
+          uv run pytest -n 2
+          --junitxml=reports/junit-compose.xml
+          --html=reports/compose-report.html --self-contained-html
+      - name: Container logs
+        if: always()
+        run: docker compose logs sut
+      - run: docker compose down -v
+        if: always()
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compose-reports
+          path: |
+            reports/
+            test-results/

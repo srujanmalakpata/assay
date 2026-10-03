@@ -1,0 +1,4 @@
+*
+!requirements.txt
+!sut/
+sut/**/__pycache__

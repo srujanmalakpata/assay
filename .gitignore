@@ -1,0 +1,30 @@
+# Python / tooling
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.hypothesis/
+.mypy_cache/
+build/
+dist/
+*.egg-info/
+
+# Test output (reports, traces, screenshots, coverage)
+reports/
+test-results/
+htmlcov/
+.coverage
+coverage.xml
+
+# Runtime data (SQLite databases created by the SUT)
+data/
+compose-data/
+*.sqlite3
+*.sqlite3-*
+*.db
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
