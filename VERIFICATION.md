@@ -5,7 +5,7 @@
 - **Browsers:** pre-installed Playwright Chromium 141.0.7390.37 (revision chromium-1194, used through Playwright 1.56.0). Selenium uses chromedriver 141.0.7390.122 supplied by Selenium Manager; the version 147 driver on PATH does not match.
 - **Key package versions:** fastapi 0.142.2, uvicorn 0.54.0, pytest 9.1.1, pytest-xdist 3.8.0, pytest-html 4.2.0, pytest-playwright 0.9.0, selenium 4.50.0, hypothesis 6.168.3, jsonschema 4.26.0, locust 2.46.6, axe-core 4.12.1 (bundled with axe-playwright-python 0.1.8), ruff 0.16.10.
 
-Commands use the project root. All measured results below are from the shared 4-vCPU Linux container described above. Docker and CI configurations are validated locally; the project has never been deployed.
+Commands use the project root. The original table records the shared 4-vCPU Linux container described above, before the navigation regressions were added. The local recheck below records the current checkout separately. Docker and CI configurations are validated locally; the project has never been deployed.
 
 | # | Command | Result | Key output |
 |---|---|---|---|
@@ -34,7 +34,7 @@ Commands use the project root. All measured results below are from the shared 4-
 | 21 | HTTP probe for BUG-010 to BUG-012 against the unfixed and fixed SUT | PASS | Before: 7 raw-JSON requests (lone `\ud800` surrogate in a password, username or title; `NaN`, `-Infinity` or `1e400` as a quantity) returned 500, with 14 tracebacks in the SUT log (`UnicodeEncodeError ... surrogates not allowed`, `ValueError: Out of range float values are not JSON compliant`); `{"quantity": true}` returned 200; `POST /api/users {"username": "DEMO"}` returned 201 next to `demo`. After: 422 for all 8 and 409 for `DEMO`, 0 tracebacks. See BUG-010 to BUG-012. |
 | 22 | Sensitivity check: regression tests against a copy with the BUG-010 to BUG-012 fixes reverted | PASS (tests failed as intended) | `21 failed, 35 passed` in the four affected API test files: every raw-JSON case, the three properties, `true`/`false`/`2.0`/`"2"` quantities, the case-insensitive username test, and the 422 contract tests (the error schema forbids an echoed `input`). |
 | 23 | Mutation check: `BEGIN IMMEDIATE` replaced with a deferred `BEGIN` in a copy of the project, `pytest tests/db -k concurrent` run 3 times | PASS (tests failed as intended) | Both race tests failed 3 of 3 times with HTTP 500 "database is locked" (13, 13 and 11 log lines), not with oversold stock. This confirms the concurrency contract in `sut/db.py` and [DESIGN.md](DESIGN.md): the conditional UPDATE prevents overselling, and the immediate lock prevents SQLITE_BUSY failures. |
-| 24 | GitHub Actions workflow run | NOT_RUN | No GitHub Actions run is recorded. The workflow is validated as YAML and its job commands are exercised locally (rows 2-20). Runner-specific `playwright install --with-deps` and Selenium Manager driver downloads are NOT_RUN. |
+| 24 | GitHub Actions workflow run | NOT_RUN | This verification did not execute or inspect GitHub Actions. See the README status badge for current workflow status. The workflow is validated as YAML and its job commands are exercised locally (rows 2-20). Runner-specific `playwright install --with-deps` and Selenium Manager driver downloads are NOT_RUN. |
 | 25 | Firefox and WebKit browsers | NOT_RUN | Only Chromium is pre-installed in the measurement environment; other browsers are NOT_RUN |
 | 26 | Search-escaping strategy regression check: `pytest tests/unit/test_search_escaping.py -k agrees --hypothesis-seed=N` for N = 1..30, before and after the fix, then `uv run pytest -n 2` | PASS (after the fix) | Before: 3 of 30 seeds failed with `UnicodeEncodeError` (falsifying example `needle='\ud800'`). The needle strategy `st.characters(blacklist_characters='\x00')` can draw lone surrogates, which sqlite3 cannot encode, causing failures in about 10% of runs. The fixed strategy also excludes category `Cs`, consistent with `tests/api/test_api_properties.py`. After: 0 of 30 seeds failed; full suite `228 passed, 3 skipped in 48.94s`. |
 
@@ -43,3 +43,32 @@ Parallelism measurements on the same shared container: about 75 s with 2 xdist w
 ## Bugs found by testing and fixed
 
 [BUG_REPORTS.md](BUG_REPORTS.md) records twelve fixed SUT defects and three corrected test defects, with failing behaviour, fixes and regression coverage. The table includes fixed-SUT results as well as explicit before/after and mutation checks; failures and NOT_RUN results remain part of the record.
+
+
+## Local recheck: 2026-10-03
+
+Environment: macOS 27.0.1, arm64, Python 3.11.15, uv 0.11.21, locked project-local dependencies. Commands ran from the project root with `UV_CACHE_DIR=/private/tmp/assay-uv-cache` because the default cache is outside the writable sandbox. Dependency downloads failed DNS resolution; copying already cached packages to the writable temporary cache allowed offline installation without changing dependencies or `uv.lock`.
+
+Changes verified: Selenium form submission waits for the submitted element to become stale and the response document to finish loading. Login then waits for the signed-in navigation or login error; cart submission waits for its added notice. Search can no longer accept the previous page's result count or read a partially parsed results table. Five deterministic navigation regressions model pending requests and partial HTML parsing, including empty results and rejected credentials. Unit-only URL fixtures prevent pytest-base-url's autouse check from starting the SUT for isolated unit runs.
+
+| Command / check | Result | Evidence |
+|---|---|---|
+| `uv sync --locked --python 3.11` | BLOCKED | PyPI download failed DNS resolution. |
+| `uv sync --locked --offline --python 3.11` after populating the temporary cache | PASS | Installed 77 locked packages into `.venv`; no lockfile or dependency changes. |
+| `uv run ruff check . && uv run ruff format --check .` | PASS | `All checks passed!`; `59 files already formatted`. |
+| `uv run pytest tests/unit -q` | PASS | `97 passed in 5.99s`, including all five navigation regressions. |
+| Navigation sensitivity check: execute the original page-object source in memory, then run `tests/unit/test_selenium_pages.py` | PASS | All five new regression cases fail against the original implementation; the wrapper confirms pytest exit 1 as expected. Tracked source remains unchanged by this check. |
+| `uv run pytest --collect-only -q` | PASS | 236 tests collected: 97 unit, 97 API, 9 DB, 18 UI, 12 accessibility, 3 Selenium. |
+| `uv run pytest -q` | BLOCKED | Final run: `97 passed, 3 skipped, 136 errors in 6.29s`, exit 1. Live-server fixture cannot bind localhost: `PermissionError: [Errno 1] Operation not permitted`. The three existing Selenium skips remain opt-in; no tests were skipped or weakened to hide these errors. |
+| `for i in 1 2 3 4 5; do uv run pytest -m selenium -q -p no:randomly || exit 1; done` | BLOCKED | Run 1: `233 deselected, 3 errors in 0.82s`, exit 1, from the same localhost bind denial before browser assertions. Loop stops at run 1; runs 2–5 did not execute. Used `SELENIUM_REQUIRED=1`, `CHROME_BINARY` pointing to cached Chromium 141, and `SE_CHROMEDRIVER` pointing to cached matching driver 141.0.7390.122. No skips counted as successful Selenium runs. |
+| `uv run python load/run_load.py --users 20 --spawn-rate 5 --duration 30s` | BLOCKED | Localhost bind denied before Locust starts; no current latency or throughput measurements. |
+| `uv run python -m qa_suite.flaky --runs 3 --out reports/flaky -- -m smoke` | BLOCKED | Three runs completed, exit 1; 1 stable-pass and 22 stable-fail due to localhost setup denial. This does not establish browser stability or app nondeterminism. |
+| `uv export --no-dev --no-hashes --format requirements-txt --no-emit-project`, compare dependency lines with `requirements.txt` | PASS | Exact match ignoring comment lines, as in the lint CI job. |
+| Parse `.github/workflows/ci.yml` with `yaml.safe_load` | PASS | Eight jobs parsed. Syntax validation does not establish runner success. |
+| `SUT_PORT=8000 docker compose config -q` | PASS | Exit 0; Compose configuration valid. |
+| `docker info --format '{{.ServerVersion}}'`; Docker build/start/container suite | BLOCKED | Permission denied accessing the existing Docker socket. Runtime Docker commands cannot proceed; no containers were created. |
+| Tracked-file hygiene and `git diff --check` | PASS | No tracked build outputs, caches, reports, or runtime databases; existing `.gitignore` covers those outputs. Added `.editorconfig`; license unchanged. |
+| Fresh-clone Quickstart end to end; browser downloads | BLOCKED | Network DNS resolution is unavailable, and local server execution is blocked as above. Existing cached dependencies enabled only the offline checks. |
+| Remote GitHub workflow execution | NOT_RUN | No remote workflow was started or queried. |
+
+**Outstanding validation:** run the full suite and five consecutive Selenium selections on a host that permits localhost and browser execution, then confirm all eight CI jobs. The earlier renderer crashes and silent server exit under contention cannot be investigated here. Historical Linux success is preserved above; it is not a passing result for this changed checkout. No deployment was performed.

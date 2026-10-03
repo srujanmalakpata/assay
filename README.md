@@ -1,45 +1,43 @@
 # assay
 
-A Python test-automation framework for an included FastAPI/SQLite bookshop.
+A Python test-automation framework that verifies a real FastAPI/SQLite bookshop across API contracts, hostile inputs, concurrent writes, browser flows, accessibility, and load gates.
 
-Repository: [srujanmalakpata/assay](https://github.com/srujanmalakpata/assay).
+[![CI](https://github.com/srujanmalakpata/assay/actions/workflows/ci.yml/badge.svg)](https://github.com/srujanmalakpata/assay/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
 
-The suite covers REST API contracts, property-based inputs, persisted database state, browser flows, accessibility and load thresholds. Tests run in parallel with pytest-xdist and produce HTML and JUnit reports. The included GitHub Actions workflow is validated locally but has not run on GitHub; see [VERIFICATION.md](VERIFICATION.md). Twelve fixed bookshop defects and their regression tests are documented in [BUG_REPORTS.md](BUG_REPORTS.md).
+## Highlights
 
-## Features
+- **Independent contracts:** hand-written JSON Schema rejects unexpected response fields; `test_raw_json_bodies.py` checks malformed bodies without echoing rejected input. [Regression coverage](BUG_REPORTS.md#bug-010-request-bodies-with-lone-surrogates-or-non-finite-numbers-crash-the-422-error-response-with-a-500).
+- **Concurrency under contention:** 8-thread tests enforce no overselling and no lost cart updates, backed by SQLite transactions and read-only state probes. [Mutation evidence](VERIFICATION.md), [design](DESIGN.md#sqlite-concurrency).
+- **12 fixed product defects:** documented reproductions and named regressions cover search escaping, input validation, session security, and accessible error pages. [Bug reports](BUG_REPORTS.md).
+- **Load tests fail CI:** a gate enforces p95 ≤300 ms, ≤1% errors, and ≥100 requests; negative checks prove it rejects breaches. [Measurements and gate checks](VERIFICATION.md).
+- **Failures stay visible:** the flaky detector distinguishes stable failures, flakes, missing tests, and broken runs; it never retries a failure into a pass. [Detector checks](VERIFICATION.md), [design](DESIGN.md#detect-flaky-tests-instead-of-retrying-them).
 
-| Area | What is implemented |
-|---|---|
-| System under test (`sut/`) | FastAPI + SQLite bookshop with server-rendered pages (sign in, search, book detail, cart, checkout, order confirmation) and a JSON REST API. It has deterministic seed data, starts with one `uvicorn` command, and ships with a Dockerfile. |
-| Server lifecycle | A session fixture starts the SUT as a real `uvicorn` subprocess on a free port with its own temporary database. Each pytest-xdist worker gets its own server, and `/healthz` echoes a per-server instance id so a worker never mistakes another worker's server for its own. Setting `SUT_BASE_URL` points the suite at an existing server, such as docker compose. |
-| Test-data builders | `UserBuilder` and `BookBuilder` are immutable fluent builders that create unique data through the public API, so tests never depend on one another. |
-| API tests | httpx client wrapper. Responses are checked against hand-written JSON Schema (Draft 2020-12) contracts with `jsonschema`. Covers auth (401/403), validation (422), conflicts (409), authorization between users, and discount rules. Raw-JSON tests send what a lenient client can put on the wire (`NaN`, `Infinity`, lone `\ud800` surrogates, `true` as a quantity) and require a 422 whose body never echoes the rejected input. |
-| Property-based tests | Hypothesis checks invariants against the live server: search soundness (every result matches) and completeness (any substring of a title finds that book), pagination, cart quantity validation (including any JSON type as the quantity), registration (pattern-valid usernames mixed with hostile text, with an exact 201-or-422 oracle), and "no id or page number ever causes a 500". It also checks the pricing rules and the LIKE-escaping helper. |
-| HTML form tests | Crafted POSTs to the HTML endpoints, bypassing the browser's `min`/`max` attributes, check that the server validates quantities, ids, page numbers and search length itself. |
-| DB-state assertions | `DbProbe` opens the SQLite file read-only and checks stock decrements, order rows, rollback on failed checkout, password hashing, hashed and expiring session rows, and session deletion on logout. It includes 8-thread race tests for overselling and for lost cart updates. |
-| UI tests | pytest-playwright with a Page Object Model (`qa_suite/pages`). Traces and screenshots are kept only for failing tests. |
-| Accessibility | axe-core 4.12 is injected through Playwright and checks WCAG 2.0/2.1 A and AA rules on every template, in empty, error, sold-out and populated states. Violations fail the test, and axe's "incomplete" checks are printed for manual review. A keyboard test checks that the skip link moves focus into `<main>`. |
-| Selenium | Three flows (login, search, add to cart) with Selenium page objects and explicit waits. They are opt-in via `-m selenium`, and a failing test saves a screenshot. If no matching chromedriver exists they skip as "NOT RUN", except in CI, where `SELENIUM_REQUIRED=1` makes that a failure. |
-| Load test | A Locust scenario with anonymous browsers and logged-in shoppers runs headless for 30 s. `qa_suite/load_gate.py` fails the run if p95 is over 300 ms, the error rate is over 1 % or fewer than 100 requests were made. |
-| Flaky-test detector | `python -m qa_suite.flaky` reruns a selection N times and labels each test stable-pass, stable-fail or flaky (a test absent from a run is recorded as missing, never as passed, and a test that passes in one run but is skipped in another is flaky). It exits 1 on a failing or flaky test and 2 if pytest itself broke (bad arguments, nothing collected, a missing or unreadable JUnit file). It never retries a failure into a pass. |
-| Reporting | pytest-html (self-contained) and JUnit XML, plus markers for `smoke`, `regression`, `unit`, `api`, `contract`, `property`, `db`, `ui`, `a11y` and `selenium`. |
-| CI | A GitHub Actions workflow with jobs for lint, API, UI, accessibility, Selenium, load smoke, flaky check and docker compose, each uploading its reports and traces as artifacts. It is validated as YAML but has not run on GitHub yet. |
+**Tech stack:** Python 3.11+ · FastAPI · SQLite · pytest/xdist · Hypothesis · JSON Schema · Playwright · Selenium · axe-core · Locust · uv · Docker · GitHub Actions.
 
-## Quick start
+**Validation:** historical Linux runs include the full suite, Chromium accessibility scans, load gates, and Docker. The latest macOS recheck passes lint and unit tests; localhost and Docker sandbox restrictions block live checks, including the five-run Selenium verification. See [VERIFICATION.md](VERIFICATION.md#local-recheck-2026-10-03). No deployment is claimed; the badge reports current GitHub CI status.
 
-Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
+## Quickstart
+
+Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/). Browser installation requires network access; on Linux use `uv run playwright install --with-deps chromium` if system browser libraries are missing. Tests start and stop their own isolated server and database.
 
 ```bash
-uv sync                                   # project-local .venv from uv.lock
-uv run playwright install chromium        # once, for UI and a11y tests
-uv run uvicorn sut.app:create_app --factory --port 8000   # open http://127.0.0.1:8000 (demo / demo-password)
+git clone https://github.com/srujanmalakpata/assay.git
+cd assay
+uv sync --locked
+uv run playwright install chromium
+uv run pytest -n 2
+uv run uvicorn sut.app:create_app --factory --port 8000
 ```
+
+The final command serves the demo at http://127.0.0.1:8000 (sign in with `demo` / `demo-password`); stop it with Ctrl-C. For a browser-free first check, run `uv run pytest tests/unit -q`. Selenium is separate: install Chrome, then run `SELENIUM_REQUIRED=1 uv run pytest -m selenium`.
 
 With Docker:
 
 ```bash
 mkdir -p compose-data && HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose up -d --build --wait
 ```
+
+**Contents:** [Architecture](#architecture) · [Features](#features) · [Running the tests](#running-the-tests) · [Results](#results) · [Limitations](#limitations) · [License](#license)
 
 ## Architecture
 
@@ -89,6 +87,25 @@ assay/
 ├── Dockerfile, docker-compose.yml, Makefile, .github/workflows/ci.yml
 ```
 
+## Features
+
+| Area | What is implemented |
+|---|---|
+| System under test (`sut/`) | FastAPI + SQLite bookshop with server-rendered pages (sign in, search, book detail, cart, checkout, order confirmation) and a JSON REST API. It has deterministic seed data, starts with one `uvicorn` command, and ships with a Dockerfile. |
+| Server lifecycle | A session fixture starts the SUT as a real `uvicorn` subprocess on a free port with its own temporary database. Each pytest-xdist worker gets its own server, and `/healthz` echoes a per-server instance id so a worker never mistakes another worker's server for its own. Setting `SUT_BASE_URL` points the suite at an existing server, such as docker compose. |
+| Test-data builders | `UserBuilder` and `BookBuilder` are immutable fluent builders that create unique data through the public API, so tests never depend on one another. |
+| API tests | httpx client wrapper. Responses are checked against hand-written JSON Schema (Draft 2020-12) contracts with `jsonschema`. Covers auth (401/403), validation (422), conflicts (409), authorization between users, and discount rules. Raw-JSON tests send what a lenient client can put on the wire (`NaN`, `Infinity`, lone `\ud800` surrogates, `true` as a quantity) and require a 422 whose body never echoes the rejected input. |
+| Property-based tests | Hypothesis checks invariants against the live server: search soundness (every result matches) and completeness (any substring of a title finds that book), pagination, cart quantity validation (including any JSON type as the quantity), registration (pattern-valid usernames mixed with hostile text, with an exact 201-or-422 oracle), and "no id or page number ever causes a 500". It also checks the pricing rules and the LIKE-escaping helper. |
+| HTML form tests | Crafted POSTs to the HTML endpoints, bypassing the browser's `min`/`max` attributes, check that the server validates quantities, ids, page numbers and search length itself. |
+| DB-state assertions | `DbProbe` opens the SQLite file read-only and checks stock decrements, order rows, rollback on failed checkout, password hashing, hashed and expiring session rows, and session deletion on logout. It includes 8-thread race tests for overselling and for lost cart updates. |
+| UI tests | pytest-playwright with a Page Object Model (`qa_suite/pages`). Traces and screenshots are kept only for failing tests. |
+| Accessibility | axe-core 4.12 is injected through Playwright and checks WCAG 2.0/2.1 A and AA rules on every template, in empty, error, sold-out and populated states. Violations fail the test, and axe's "incomplete" checks are printed for manual review. A keyboard test checks that the skip link moves focus into `<main>`. |
+| Selenium | Three flows (login, search, add to cart) with Selenium page objects and explicit waits. They are opt-in via `-m selenium`, and a failing test saves a screenshot. If no matching chromedriver exists they skip as "NOT RUN", except in CI, where `SELENIUM_REQUIRED=1` makes that a failure. |
+| Load test | A Locust scenario with anonymous browsers and logged-in shoppers runs headless for 30 s. `qa_suite/load_gate.py` fails the run if p95 is over 300 ms, the error rate is over 1 % or fewer than 100 requests were made. |
+| Flaky-test detector | `python -m qa_suite.flaky` reruns a selection N times and labels each test stable-pass, stable-fail or flaky (a test absent from a run is recorded as missing, never as passed, and a test that passes in one run but is skipped in another is flaky). It exits 1 on a failing or flaky test and 2 if pytest itself broke (bad arguments, nothing collected, a missing or unreadable JUnit file). It never retries a failure into a pass. |
+| Reporting | pytest-html (self-contained) and JUnit XML, plus markers for `smoke`, `regression`, `unit`, `api`, `contract`, `property`, `db`, `ui`, `a11y` and `selenium`. |
+| CI | A GitHub Actions workflow with jobs for lint, API, UI, accessibility, Selenium, load smoke, flaky check and docker compose, each uploading its reports and traces as artifacts. See the live status badge above and the local evidence in [VERIFICATION.md](VERIFICATION.md). |
+
 ## Running the tests
 
 ```bash
@@ -107,6 +124,8 @@ SUT_BASE_URL=http://127.0.0.1:8000 SUT_DB_PATH=compose-data/bookshop.sqlite3 uv 
 A failing Playwright test leaves `trace.zip` and a screenshot under `test-results/playwright/`. Open the trace with `uv run playwright show-trace <trace.zip>`.
 
 ## Results
+
+The table below preserves the original Linux baseline (231 tests), before the five navigation regression tests were added. The current collection and local recheck are recorded separately in [VERIFICATION.md](VERIFICATION.md#local-recheck-2026-10-03).
 
 All numbers were measured on a shared 4-vCPU Linux container on 2026-10-03, with other workloads running at the same time (load average 7-24 during these runs). See [VERIFICATION.md](VERIFICATION.md) for the exact commands.
 
@@ -127,11 +146,11 @@ All numbers were measured on a shared 4-vCPU Linux container on 2026-10-03, with
 
 ## Limitations
 
-The Docker and CI configurations are validated locally; the project has never been deployed.
+Historical Docker execution and local CI-command validation are recorded in [VERIFICATION.md](VERIFICATION.md). The latest restricted macOS recheck cannot start local servers or access Docker; full-suite and Selenium stability checks remain blocked. The project has never been deployed.
 
 - The SUT is deliberately small, with one process and SQLite. Its load numbers say nothing about a production deployment, and the load test checks only that thresholds hold on the runner it uses.
 - Browser coverage is Chromium only. Firefox and WebKit would only need `--browser firefox` in pytest-playwright, but they were not run here.
-- The Selenium tests needed a chromedriver matching the pre-installed Chromium 141. Here Selenium Manager downloaded it (with `SE_SKIP_DRIVER_IN_PATH=true` and `CHROME_BINARY` set). If no driver can be obtained, the tests are skipped with a "NOT RUN" reason.
+- The original Linux Selenium run needed a chromedriver matching the pre-installed Chromium 141. Selenium Manager downloaded it (with `SE_SKIP_DRIVER_IN_PATH=true` and `CHROME_BINARY` set). If no driver can be obtained, the tests are skipped with a "NOT RUN" reason.
 - The admin token (`dev-admin-token`) and demo password exist only so tests can create data. They are not secrets and must be overridden for any real use.
 - There is no CSRF token on the HTML forms. Session cookies are `HttpOnly` and `SameSite=Lax`, which is enough for this demo but not for a real shop. Sessions are stored as SHA-256 digests and expire after 12 hours, but there is no rate limiting or account lockout on login.
 - The schema has no migrations. An existing `data/` or `compose-data/` database from an older version must be deleted (the `sessions` table and the case-insensitive `users.username` column changed).

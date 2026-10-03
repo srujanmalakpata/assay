@@ -32,13 +32,32 @@ class SeleniumPage:
     def find_all(self, testid: str) -> list[WebElement]:
         return self.driver.find_elements(*_testid(testid))
 
+    def submit(self, testid: str) -> None:
+        """Wait for this form's response, not elements in the pre-submit document."""
+        button = self.wait.until(ec.element_to_be_clickable(_testid(testid)))
+        button.click()
+        self.wait.until(ec.staleness_of(button))
+        # A status element can appear before the rest of the HTML has been parsed.
+        # Wait for the response document to finish loading before reading its rows.
+        self.wait.until(
+            lambda driver: driver.execute_script("return document.readyState") == "complete"
+        )
+
 
 class SeleniumLoginPage(SeleniumPage):
     def login(self, username: str, password: str) -> None:
         self.open("/login")
         self.find("username").send_keys(username)
         self.find("password").send_keys(password)
-        self.find("login-submit").click()
+        self.submit("login-submit")
+        # The caller may immediately navigate again; the session cookie and redirect
+        # must have completed first. Failed credentials render a new login document.
+        self.wait.until(
+            ec.any_of(
+                ec.visibility_of_element_located(_testid("nav-user")),
+                ec.visibility_of_element_located(_testid("login-error")),
+            )
+        )
 
     def signed_in_text(self) -> str:
         return self.find("nav-user").text
@@ -53,7 +72,7 @@ class SeleniumSearchPage(SeleniumPage):
         box = self.find("search-input")
         box.clear()
         box.send_keys(query)
-        self.find("search-submit").click()
+        self.submit("search-submit")
         self.find("result-count")
 
     def titles(self) -> list[str]:
@@ -69,7 +88,8 @@ class SeleniumBookPage(SeleniumPage):
         qty = self.find("quantity")
         qty.clear()
         qty.send_keys(str(quantity))
-        self.find("add-to-cart").click()
+        self.submit("add-to-cart")
+        self.find("added-notice")
 
     def added_notice(self) -> str:
         return self.find("added-notice").text
